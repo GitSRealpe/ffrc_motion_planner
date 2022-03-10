@@ -1,0 +1,7 @@
+<library path="libmoveit_ffrc_planner_plugin">
+  <class name="ffrc_interface/FFRCPlanner" type="ffrc_interface::FFRCPlannerManager" base_class_type="planning_interface::PlannerManager">
+    <description>
+      The ffrc motion planner plugin FELIPE/FAJARDO/REALPE/CHAMORRO.
+    </description>
+  </class>
+</library>
