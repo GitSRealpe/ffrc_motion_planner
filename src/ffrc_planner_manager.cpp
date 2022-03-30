@@ -65,7 +65,9 @@ public:
     ROS_INFO_STREAM_NAMED("ffrc_planner_manager", "===>>> context is made ");
 
     context->setPlanningScene(planning_scene);
+    ROS_INFO_STREAM_NAMED("ffrc_planner_manager", "print debug1 ");
     context->setMotionPlanRequest(req);
+    ROS_INFO_STREAM_NAMED("ffrc_planner_manager", "print debug2");
 
     error_code.val = moveit_msgs::MoveItErrorCodes::SUCCESS;
     return context;
