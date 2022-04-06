@@ -11,14 +11,14 @@
 
 #include <ompl/base/SpaceInformation.h>
 #include <ompl/base/spaces/RealVectorStateSpace.h>
-// #include <ompl/geometric/planners/rrt/RRTConnect.h>
+#include <ompl/geometric/planners/rrt/RRTConnect.h>
 #include <ffrc_interface/ffrc.h>
 #include <ompl/geometric/SimpleSetup.h>
 #include <ompl/base/PlannerData.h>
 #include <ompl/base/PlannerDataStorage.h>
 #include <ompl/base/PlannerDataGraph.h>
-
 #include <ompl/config.h>
+
 #include <iostream>
 #include <thread>
 
@@ -26,8 +26,8 @@
 
 namespace ffrc_interface
 {
-  FFRCInterface::FFRCInterface(const ros::NodeHandle &nh)
-      : nh_(nh), name_("FFRCInterface")
+  FFRCInterface::FFRCInterface(const ros::NodeHandle &nh, int val)
+      : nh_(nh), name_("FFRCInterface"), val_(val)
   {
     ROS_INFO_STREAM_NAMED("ffrc_interface", "Iniciando FFRC OMPL interface using ROS parameters");
     // loadPlannerConfigurations();
@@ -40,7 +40,8 @@ namespace ffrc_interface
   {
     // Load the planner-specific parameters
     nh_.param("num_steps", num_steps_, 10);
-
+    pc_ = planning_scene;
+    req_ = req;
     ros::WallTime start_time = ros::WallTime::now();
     moveit::core::RobotModelConstPtr robot_model = planning_scene->getRobotModel();
     moveit::core::RobotStatePtr start_state(new moveit::core::RobotState(robot_model));
@@ -56,6 +57,7 @@ namespace ffrc_interface
     const std::vector<moveit_msgs::JointConstraint> &goal_joint_constraint = goal_constraints[0].joint_constraints;
 
     // aqui meto mano
+    std::cout << val_ << "\n";
     ROS_INFO_STREAM_NAMED("ffrc_interface", "valores start juntas");
     for (int i = 0; i < dof_; i++)
     {
@@ -65,10 +67,10 @@ namespace ffrc_interface
 
     // tomar el numero de juntas, revisar los limites articulares para cada junta
     // construct the state space we are planning in
-    auto space(std::make_shared<ompl::base::RealVectorStateSpace>(6));
+    auto space(std::make_shared<ompl::base::RealVectorStateSpace>(dof_));
     space->setName("C-space");
     // set the bounds for the state space
-    ompl::base::RealVectorBounds bounds(6);
+    ompl::base::RealVectorBounds bounds(dof_);
     for (auto i = 0; i < dof_; i++)
     {
       bounds.setLow(i, joint_model_group->getJointModels().at(i)->getVariableBounds().at(0).min_position_);
@@ -79,6 +81,15 @@ namespace ffrc_interface
     // construct an instance of space information from this state space
     auto si(std::make_shared<ompl::base::SpaceInformation>(space));
     si->printSettings(std::cout);
+
+    // create a random state
+    ompl::base::ScopedState<> stado(space);
+    stado.random();
+    stado = std::vector<double>{0, -0.122173, 0.663225, 0, 1.64061, 0};
+    std::cout << "printing el estado: ";
+    stado.print();
+    std::cout << "\n";
+    isStateValid(stado.get());
 
     // hasta aqui el caos
 
@@ -106,6 +117,49 @@ namespace ffrc_interface
     res.group_name = req.group_name;
     res.trajectory_start.joint_state.name = joint_names;
     res.trajectory_start.joint_state.position = start_joint_values;
+
+    return true;
+  }
+
+  bool FFRCInterface::isStateValid(const ompl::base::State *state)
+  {
+    collision_detection::CollisionRequest collision_request;
+    collision_detection::CollisionResult collision_result;
+    moveit::core::RobotState robot_state = pc_->getCurrentState();
+
+    // std::vector<double> joint_values[dof_];
+    // for (auto i = 0; i < dof_; i++)
+    // {
+    //   joint_values->push_back(val[i]);
+    // }
+    double *val = state->as<ompl::base::RealVectorStateSpace::StateType>()->values;
+    const moveit::core::JointModelGroup *joint_model_group = robot_state.getJointModelGroup(req_.group_name);
+    robot_state.setJointGroupPositions(joint_model_group, val);
+    for (auto i = 0; i < dof_; i++)
+    {
+      // std::cout << robot_state.getJointModelGroup(req_.group_name)->getJointModels().at(i) << ", ";
+      std::cout << robot_state.getJointPositions(joint_model_group->getJointModels().at(i))[0] << ", ";
+    }
+
+    std::cout << "validando estados \n";
+    std::cout << pc_->getPlanningFrame() << "\n";
+    collision_result.clear();
+    pc_->checkCollision(collision_request, collision_result, robot_state);
+
+    std::cout << "lo colicion es: " << collision_result.collision << "\n";
+    // check collision avoidance
+    // collision_detection::CollisionResult res;
+    // getPlanningScene()->checkCollision(
+    //     verbose ? collision_request_simple_verbose_ : collision_request_simple_, res, *robot_state);
+    // if (!res.collision)
+    // {
+    //   const_cast<ob::State *>(state)->as<ModelBasedStateSpace::StateType>()->markValid();
+    // }
+    // else
+    // {
+    //   const_cast<ob::State *>(state)->as<ModelBasedStateSpace::StateType>()->markInvalid();
+    // }
+    // return !res.collision;
 
     return true;
   }
