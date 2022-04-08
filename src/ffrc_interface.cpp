@@ -24,6 +24,31 @@
 
 #include "ffrc_interface/ffrc_interface.h"
 
+int dof_;
+planning_scene::PlanningSceneConstPtr pc_;
+planning_interface::MotionPlanRequest req_;
+
+bool isStateValid(const ompl::base::State *state)
+{
+  collision_detection::CollisionRequest collision_request;
+  collision_detection::CollisionResult collision_result;
+  moveit::core::RobotState robot_state = pc_->getCurrentState();
+  const moveit::core::JointModelGroup *joint_model_group = robot_state.getJointModelGroup(req_.group_name);
+  double *val = state->as<ompl::base::RealVectorStateSpace::StateType>()->values;
+  robot_state.setJointGroupPositions(joint_model_group, val);
+  for (auto i = 0; i < dof_; i++)
+  {
+    std::cout << robot_state.getJointPositions(joint_model_group->getJointModels().at(i))[0] << ", ";
+  }
+  // check collision avoidance
+  std::cout << "validando estados \n";
+  collision_result.clear();
+  pc_->checkCollision(collision_request, collision_result, robot_state);
+  std::cout << "lo colicion es: " << collision_result.collision << "\n";
+  // collision=true, estado invalido, toncs false
+  return !collision_result.collision;
+}
+
 namespace ffrc_interface
 {
   FFRCInterface::FFRCInterface(const ros::NodeHandle &nh, int val)
@@ -84,12 +109,14 @@ namespace ffrc_interface
 
     // create a random state
     ompl::base::ScopedState<> stado(space);
-    stado.random();
     stado = std::vector<double>{0, -0.122173, 0.663225, 0, 1.64061, 0};
-    std::cout << "printing el estado: ";
+    std::cout << "printing el estado para probar colision: ";
     stado.print();
     std::cout << "\n";
     isStateValid(stado.get());
+
+    // set state validity checking for this space
+    si->setStateValidityChecker(isStateValid);
 
     // hasta aqui el caos
 
@@ -117,49 +144,6 @@ namespace ffrc_interface
     res.group_name = req.group_name;
     res.trajectory_start.joint_state.name = joint_names;
     res.trajectory_start.joint_state.position = start_joint_values;
-
-    return true;
-  }
-
-  bool FFRCInterface::isStateValid(const ompl::base::State *state)
-  {
-    collision_detection::CollisionRequest collision_request;
-    collision_detection::CollisionResult collision_result;
-    moveit::core::RobotState robot_state = pc_->getCurrentState();
-
-    // std::vector<double> joint_values[dof_];
-    // for (auto i = 0; i < dof_; i++)
-    // {
-    //   joint_values->push_back(val[i]);
-    // }
-    double *val = state->as<ompl::base::RealVectorStateSpace::StateType>()->values;
-    const moveit::core::JointModelGroup *joint_model_group = robot_state.getJointModelGroup(req_.group_name);
-    robot_state.setJointGroupPositions(joint_model_group, val);
-    for (auto i = 0; i < dof_; i++)
-    {
-      // std::cout << robot_state.getJointModelGroup(req_.group_name)->getJointModels().at(i) << ", ";
-      std::cout << robot_state.getJointPositions(joint_model_group->getJointModels().at(i))[0] << ", ";
-    }
-
-    std::cout << "validando estados \n";
-    std::cout << pc_->getPlanningFrame() << "\n";
-    collision_result.clear();
-    pc_->checkCollision(collision_request, collision_result, robot_state);
-
-    std::cout << "lo colicion es: " << collision_result.collision << "\n";
-    // check collision avoidance
-    // collision_detection::CollisionResult res;
-    // getPlanningScene()->checkCollision(
-    //     verbose ? collision_request_simple_verbose_ : collision_request_simple_, res, *robot_state);
-    // if (!res.collision)
-    // {
-    //   const_cast<ob::State *>(state)->as<ModelBasedStateSpace::StateType>()->markValid();
-    // }
-    // else
-    // {
-    //   const_cast<ob::State *>(state)->as<ModelBasedStateSpace::StateType>()->markInvalid();
-    // }
-    // return !res.collision;
 
     return true;
   }
