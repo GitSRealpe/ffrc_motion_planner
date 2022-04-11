@@ -28,12 +28,16 @@ namespace ffrc_interface
     bool solve(const planning_scene::PlanningSceneConstPtr &planning_scene,
                const planning_interface::MotionPlanRequest &req, moveit_msgs::MotionPlanDetailedResponse &res);
     // bool isStateValid(const ompl::base::State *state);
+    bool isStateValid(const ompl::base::State *state);
 
   protected:
     ros::NodeHandle nh_;
     std::string name_;
     int num_steps_;
     int val_;
+    int dof_;
+    planning_scene::PlanningSceneConstPtr pc_;
+    planning_interface::MotionPlanRequest req_;
 
   private:
     void interpolate(const std::vector<std::string> &joint_names, moveit::core::RobotStatePtr &robot_state,

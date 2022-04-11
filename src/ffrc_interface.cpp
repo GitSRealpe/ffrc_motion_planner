@@ -24,31 +24,6 @@
 
 #include "ffrc_interface/ffrc_interface.h"
 
-int dof_;
-planning_scene::PlanningSceneConstPtr pc_;
-planning_interface::MotionPlanRequest req_;
-
-bool isStateValid(const ompl::base::State *state)
-{
-  collision_detection::CollisionRequest collision_request;
-  collision_detection::CollisionResult collision_result;
-  moveit::core::RobotState robot_state = pc_->getCurrentState();
-  const moveit::core::JointModelGroup *joint_model_group = robot_state.getJointModelGroup(req_.group_name);
-  double *val = state->as<ompl::base::RealVectorStateSpace::StateType>()->values;
-  robot_state.setJointGroupPositions(joint_model_group, val);
-  for (auto i = 0; i < dof_; i++)
-  {
-    std::cout << robot_state.getJointPositions(joint_model_group->getJointModels().at(i))[0] << ", ";
-  }
-  // check collision avoidance
-  std::cout << "validando estados \n";
-  collision_result.clear();
-  pc_->checkCollision(collision_request, collision_result, robot_state);
-  std::cout << "lo colicion es: " << collision_result.collision << "\n";
-  // collision=true, estado invalido, toncs false
-  return !collision_result.collision;
-}
-
 namespace ffrc_interface
 {
   FFRCInterface::FFRCInterface(const ros::NodeHandle &nh, int val)
@@ -57,6 +32,27 @@ namespace ffrc_interface
     ROS_INFO_STREAM_NAMED("ffrc_interface", "Iniciando FFRC OMPL interface using ROS parameters");
     // loadPlannerConfigurations();
     // loadConstraintSamplers();
+  }
+
+  bool FFRCInterface::isStateValid(const ompl::base::State *state)
+  {
+    collision_detection::CollisionRequest collision_request;
+    collision_detection::CollisionResult collision_result;
+    moveit::core::RobotState robot_state = pc_->getCurrentState();
+    const moveit::core::JointModelGroup *joint_model_group = robot_state.getJointModelGroup(req_.group_name);
+    double *val = state->as<ompl::base::RealVectorStateSpace::StateType>()->values;
+    robot_state.setJointGroupPositions(joint_model_group, val);
+    for (auto i = 0; i < dof_; i++)
+    {
+      std::cout << robot_state.getJointPositions(joint_model_group->getJointModels().at(i))[0] << ", ";
+    }
+    // check collision avoidance
+    std::cout << "validando estados \n";
+    collision_result.clear();
+    this->pc_->checkCollision(collision_request, collision_result, robot_state);
+    std::cout << "lo colicion es: " << collision_result.collision << "\n";
+    // collision=true, estado invalido, toncs false
+    return !collision_result.collision;
   }
 
   bool FFRCInterface::solve(const planning_scene::PlanningSceneConstPtr &planning_scene,
@@ -74,21 +70,18 @@ namespace ffrc_interface
     const moveit::core::JointModelGroup *joint_model_group = start_state->getJointModelGroup(req.group_name);
     std::vector<std::string> joint_names = joint_model_group->getVariableNames();
     dof_ = joint_names.size();
+
     std::vector<double> start_joint_values;
     start_state->copyJointGroupPositions(joint_model_group, start_joint_values);
 
-    // This planner only supports one goal constraint in the request
-    const std::vector<moveit_msgs::Constraints> &goal_constraints = req.goal_constraints;
-    const std::vector<moveit_msgs::JointConstraint> &goal_joint_constraint = goal_constraints[0].joint_constraints;
+    std::vector<double> goal_joint_values;
+    // goal_joint_values.reserve(goal_joint_constraint.size());
+    for (const auto &constraint : req_.goal_constraints.at(0).joint_constraints)
+    {
+      goal_joint_values.push_back(constraint.position);
+    }
 
     // aqui meto mano
-    std::cout << val_ << "\n";
-    ROS_INFO_STREAM_NAMED("ffrc_interface", "valores start juntas");
-    for (int i = 0; i < dof_; i++)
-    {
-      std::cout << start_joint_values.at(i) << ", ";
-    }
-    std::cout << "\n";
 
     // tomar el numero de juntas, revisar los limites articulares para cada junta
     // construct the state space we are planning in
@@ -107,25 +100,57 @@ namespace ffrc_interface
     auto si(std::make_shared<ompl::base::SpaceInformation>(space));
     si->printSettings(std::cout);
 
-    // create a random state
+    // create a test state
     ompl::base::ScopedState<> stado(space);
     stado = std::vector<double>{0, -0.122173, 0.663225, 0, 1.64061, 0};
-    std::cout << "printing el estado para probar colision: ";
-    stado.print();
-    std::cout << "\n";
-    isStateValid(stado.get());
+    // std::cout << "printing el estado para probar colision: ";
+    // stado.print();
+    // std::cout << "\n";
+    // isStateValid(stado.get());
 
     // set state validity checking for this space
-    si->setStateValidityChecker(isStateValid);
+    // this hace referecnia a esta clase
+    std::function<bool(const ompl::base::State *state)> f = std::bind(&FFRCInterface::isStateValid, this, std::placeholders::_1);
+    si->setStateValidityChecker(f);
+
+    std::cout << "prueba del bind ese raro \n"
+              << si->getStateValidityChecker()->isValid(stado.get()) << "\n";
+
+    // start state
+    ompl::base::ScopedState<> start(space);
+    start = start_joint_values;
+    // goal state
+    ompl::base::ScopedState<> goal(space);
+    goal = goal_joint_values;
+
+    // create a problem instance
+    auto pdef(std::make_shared<ompl::base::ProblemDefinition>(si));
+
+    // set the start and goal states
+    pdef->setStartAndGoalStates(start, goal);
+
+    // create a planner for the defined space
+    // auto planner(std::make_shared<og::RRT>(si));
+    auto planner(std::make_shared<ompl::geometric::FFRC>(si));
+
+    // set the problem we are trying to solve for the planner
+    planner->setProblemDefinition(pdef);
+
+    // perform setup steps for the planner
+    planner->setup();
+
+    // print the problem settings
+    pdef->print(std::cout);
+
+    // attempt to solve the problem within one second of planning delay
+    ompl::base::PlannerStatus solved = planner->ompl::base::Planner::solve(5.0);
+
+    if (solved)
+    {
+      std::cout << "solved \n";
+    }
 
     // hasta aqui el caos
-
-    std::vector<double> goal_joint_values;
-    goal_joint_values.reserve(goal_joint_constraint.size());
-    for (const auto &constraint : goal_joint_constraint)
-    {
-      goal_joint_values.push_back(constraint.position);
-    }
 
     // ==================== Interpolation
     trajectory_msgs::JointTrajectory joint_trajectory;
