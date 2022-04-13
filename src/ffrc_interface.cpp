@@ -100,19 +100,14 @@ namespace ffrc_interface
     auto si(std::make_shared<ompl::base::SpaceInformation>(space));
     si->printSettings(std::cout);
 
-    // create a test state
-    ompl::base::ScopedState<> stado(space);
-    stado = std::vector<double>{0, -0.122173, 0.663225, 0, 1.64061, 0};
-    // std::cout << "printing el estado para probar colision: ";
-    // stado.print();
-    // std::cout << "\n";
-    // isStateValid(stado.get());
-
     // set state validity checking for this space
     // this hace referecnia a esta clase
     std::function<bool(const ompl::base::State *state)> f = std::bind(&FFRCInterface::isStateValid, this, std::placeholders::_1);
     si->setStateValidityChecker(f);
 
+    // create a test state
+    ompl::base::ScopedState<> stado(space);
+    stado = std::vector<double>{0, -0.122173, 0.663225, 0, 1.64061, 0};
     std::cout << "prueba del bind ese raro \n"
               << si->getStateValidityChecker()->isValid(stado.get()) << "\n";
 
@@ -147,28 +142,82 @@ namespace ffrc_interface
 
     if (solved)
     {
-      std::cout << "solved \n";
+      // get the goal representation from the problem definition (not the same as the goal state)
+      // and inquire about the found path
+      std::cout << "Found solution: \n";
+
+      // print the path to screen
+      ompl::geometric::PathGeometric *path = pdef->getSolutionPath()->as<ompl::geometric::PathGeometric>();
+      path->print(std::cout);
+      std::cout << path->getStateCount() << "\n";
+
+      trajectory_msgs::JointTrajectory joint_trajectory;
+      joint_trajectory.header = req.start_state.joint_state.header;
+      joint_trajectory.joint_names = joint_names;
+      joint_trajectory.points.resize(path->getStateCount());
+
+      double *n;
+      for (size_t j = 0; j < path->getStateCount(); j++)
+      {
+        n = path->getState(j)->as<ompl::base::RealVectorStateSpace::StateType>()->values;
+        std::vector<double> joint_vals;
+        for (auto i = 0; i < dof_; i++)
+        {
+          joint_vals.push_back(n[i]);
+        }
+        joint_trajectory.points[j].positions = joint_vals;
+        joint_trajectory.points[j].time_from_start = ros::Duration(double(j));
+      }
+
+      std::cout << joint_trajectory << "\n";
+
+      // ==================== feed the response
+      res.trajectory.resize(1);
+      res.trajectory[0].joint_trajectory = joint_trajectory;
+
+      res.error_code.val = moveit_msgs::MoveItErrorCodes::SUCCESS;
+      res.processing_time.push_back((ros::WallTime::now() - start_time).toSec());
+      res.group_name = req.group_name;
+      res.trajectory_start.joint_state.name = joint_names;
+      res.trajectory_start.joint_state.position = start_joint_values;
+
+      ompl::base::PlannerData pd(si);
+      planner->getPlannerData(pd);
+      std::cout << pd.numVertices() << "\n";
+      std::cout << "printing los vertices de la trayectoria \n";
+      // for (size_t i = 0; i < pd.numVertices(); i++)
+      // {
+      //   double *val = pd.getVertex(i).getState()->as<ompl::base::RealVectorStateSpace::StateType>()->values;
+      //   ompl::base::ScopedState<> stt(space);
+      //   stt = pd.getVertex(i).getState();
+      //   stt.print();
+      // }
+    }
+    else
+    {
+      std::cout << "No solution found" << std::endl;
+      res.error_code.val = moveit_msgs::MoveItErrorCodes::PLANNING_FAILED;
     }
 
     // hasta aqui el caos
 
     // ==================== Interpolation
-    trajectory_msgs::JointTrajectory joint_trajectory;
-    interpolate(joint_names, start_state, joint_model_group, start_joint_values, goal_joint_values, joint_trajectory);
+    // trajectory_msgs::JointTrajectory joint_trajectory;
+    // interpolate(joint_names, start_state, joint_model_group, start_joint_values, goal_joint_values, joint_trajectory);
 
     // ==================== feed the response
-    res.trajectory.resize(1);
-    res.trajectory[0].joint_trajectory.joint_names = joint_names;
-    res.trajectory[0].joint_trajectory.header = req.start_state.joint_state.header;
-    res.trajectory[0].joint_trajectory = joint_trajectory;
+    // res.trajectory.resize(1);
+    // res.trajectory[0].joint_trajectory.header = req.start_state.joint_state.header;
+    // res.trajectory[0].joint_trajectory.joint_names = joint_names;
+    // res.trajectory[0].joint_trajectory = joint_trajectory;
 
-    res.error_code.val = moveit_msgs::MoveItErrorCodes::SUCCESS;
-    // res.error_code.val = moveit_msgs::MoveItErrorCodes::PLANNING_FAILED;
-    res.processing_time.push_back((ros::WallTime::now() - start_time).toSec());
+    // res.error_code.val = moveit_msgs::MoveItErrorCodes::SUCCESS;
 
-    res.group_name = req.group_name;
-    res.trajectory_start.joint_state.name = joint_names;
-    res.trajectory_start.joint_state.position = start_joint_values;
+    // res.processing_time.push_back((ros::WallTime::now() - start_time).toSec());
+
+    // res.group_name = req.group_name;
+    // res.trajectory_start.joint_state.name = joint_names;
+    // res.trajectory_start.joint_state.position = start_joint_values;
 
     return true;
   }
