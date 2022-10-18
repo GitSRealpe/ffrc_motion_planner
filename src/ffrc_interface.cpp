@@ -50,7 +50,11 @@ namespace ffrc_interface
     std::cout << "validando estados \n";
     collision_result.clear();
     this->pc_->checkCollision(collision_request, collision_result, robot_state);
-    std::cout << "lo colicion es: " << collision_result.collision << "\n";
+    if (collision_result.collision)
+    {
+      std::cout << "lo colicion es: " << collision_result.collision << "\n";
+    }
+
     // collision=true, estado invalido, toncs false
     return !collision_result.collision;
   }
@@ -169,7 +173,7 @@ namespace ffrc_interface
         joint_trajectory.points[j].time_from_start = ros::Duration(double(j));
       }
 
-      std::cout << joint_trajectory << "\n";
+      // std::cout << joint_trajectory << "\n";
 
       // ==================== feed the response
       res.trajectory.resize(1);
@@ -185,13 +189,13 @@ namespace ffrc_interface
       planner->getPlannerData(pd);
       std::cout << pd.numVertices() << "\n";
       std::cout << "printing los vertices de la trayectoria \n";
-      // for (size_t i = 0; i < pd.numVertices(); i++)
-      // {
-      //   double *val = pd.getVertex(i).getState()->as<ompl::base::RealVectorStateSpace::StateType>()->values;
-      //   ompl::base::ScopedState<> stt(space);
-      //   stt = pd.getVertex(i).getState();
-      //   stt.print();
-      // }
+      for (size_t i = 0; i < pd.numVertices(); i++)
+      {
+        // double *val = pd.getVertex(i).getState()->as<ompl::base::RealVectorStateSpace::StateType>()->values;
+        ompl::base::ScopedState<> stt(space);
+        stt = pd.getVertex(i).getState();
+        stt.print();
+      }
     }
     else
     {
